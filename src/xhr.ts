@@ -1,9 +1,10 @@
 import { AxiosRequestConfig, AxiosResponse, AxiosPromise } from './types'
 import { parseHeaders } from './helpers/headers'
+import { createError } from './helpers/error'
 
 function xhr(config: AxiosRequestConfig): AxiosPromise {
-  return new Promise(resolve => {
-    const { data = null, url, method = 'get', headers, responseType } = config
+  return new Promise((resolve, reject) => {
+    const { data = null, url, method = 'get', headers, responseType, timeout } = config
 
     const request = new XMLHttpRequest()
 
@@ -11,6 +12,9 @@ function xhr(config: AxiosRequestConfig): AxiosPromise {
       request.responseType = responseType
     }
 
+    if (timeout) {
+      request.timeout = timeout
+    }
     request.open(method.toUpperCase(), url, true)
 
     request.onreadystatechange = function handleLoad() {
@@ -30,6 +34,16 @@ function xhr(config: AxiosRequestConfig): AxiosPromise {
       resolve(response)
     }
 
+    // 网络错误
+    request.onerror = function handleError() {
+      reject(createError('Network Error', config, null, request))
+    }
+
+    // 请求超时
+    request.ontimeout = function handleTimeOut() {
+      reject(createError(`Timeout of ${timeout} ms exceeded`, config, 'ECONNSBORTED', request))
+    }
+
     Object.keys(headers).forEach(key => {
       // 如果没有请求体，content-type没有意义
       if (data === null && key.toLowerCase() === 'content-type') {
@@ -39,6 +53,22 @@ function xhr(config: AxiosRequestConfig): AxiosPromise {
       }
     })
     request.send(data)
+
+    function handleResponse(response: AxiosResponse): void {
+      if (response.status >= 200 && response.status < 300) {
+        resolve(response)
+      } else {
+        reject(
+          createError(
+            `Request failed with status code ${response.status}`,
+            config,
+            null,
+            request,
+            response
+          )
+        )
+      }
+    }
   })
 }
 
